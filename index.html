@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rhyme Finder</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #f0f4ff;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 60px 16px;
+    }
+
+    .card {
+      background: white;
+      border-radius: 16px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+      padding: 40px;
+      width: 100%;
+      max-width: 560px;
+    }
+
+    h1 {
+      font-size: 1.8rem;
+      color: #2d2d2d;
+      margin-bottom: 6px;
+    }
+
+    .subtitle {
+      color: #888;
+      font-size: 0.9rem;
+      margin-bottom: 28px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    input {
+      flex: 1;
+      padding: 12px 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus { border-color: #6c63ff; }
+
+    button {
+      padding: 12px 20px;
+      background: #6c63ff;
+      color: white;
+      border: none;
+      border-radius: 10px;
+      font-size: 1rem;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s;
+    }
+
+    button:hover { background: #574fd6; }
+    button:disabled { background: #b0abf5; cursor: not-allowed; }
+
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-top: 28px;
+      margin-bottom: 16px;
+    }
+
+    .tab {
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      border: 2px solid #e0e0e0;
+      background: white;
+      color: #666;
+      transition: all 0.2s;
+    }
+
+    .tab.active {
+      background: #6c63ff;
+      border-color: #6c63ff;
+      color: white;
+    }
+
+    .status {
+      font-size: 0.9rem;
+      color: #888;
+      margin-bottom: 14px;
+      min-height: 20px;
+    }
+
+    .rhyme-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .rhyme-chip {
+      padding: 6px 14px;
+      background: #f0eeff;
+      color: #6c63ff;
+      border-radius: 20px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: background 0.15s;
+      user-select: none;
+    }
+
+    .rhyme-chip:hover {
+      background: #ddd9ff;
+    }
+
+    .empty {
+      color: #aaa;
+      font-size: 0.9rem;
+      padding: 10px 0;
+    }
+
+    .hint {
+      font-size: 0.78rem;
+      color: #bbb;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Rhyme Finder</h1>
+    <p class="subtitle">Enter a word or sentence — we'll rhyme the last word</p>
+
+    <div class="input-row">
+      <input
+        id="wordInput"
+        type="text"
+        placeholder="e.g. cat, moon, love story"
+        autocomplete="off"
+      />
+      <button id="findBtn" onclick="findRhymes()">Find Rhymes</button>
+    </div>
+
+    <div class="tabs">
+      <div class="tab active" id="tab-perfect" onclick="switchTab('perfect')">Perfect</div>
+      <div class="tab" id="tab-near" onclick="switchTab('near')">Near Rhymes</div>
+    </div>
+
+    <div class="status" id="status"></div>
+    <div class="rhyme-grid" id="results"></div>
+    <p class="hint" id="hint"></p>
+  </div>
+
+  <script>
+    let currentTab = 'perfect';
+    let perfectRhymes = [];
+    let nearRhymes = [];
+
+    document.getElementById('wordInput').addEventListener('keydown', e => {
+      if (e.key === 'Enter') findRhymes();
+    });
+
+    function getLastWord(input) {
+      const words = input.trim().split(/\s+/);
+      return words[words.length - 1].replace(/[^a-zA-Z']/g, '');
+    }
+
+    async function findRhymes() {
+      const input = document.getElementById('wordInput').value.trim();
+      if (!input) return;
+
+      const word = getLastWord(input);
+      if (!word) return;
+
+      const btn = document.getElementById('findBtn');
+      btn.disabled = true;
+      btn.textContent = 'Searching…';
+      setStatus(`Finding rhymes for "${word}"…`);
+      clearResults();
+
+      try {
+        const res = await fetch('/api/rhymes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ word }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Server error ${res.status}`);
+        }
+
+        const data = await res.json();
+        perfectRhymes = (data.perfect || []).map(w => ({ word: w }));
+        nearRhymes = (data.near || []).map(w => ({ word: w }));
+
+        renderTab();
+        document.getElementById('hint').textContent = 'Click any word to copy it';
+      } catch (err) {
+        setStatus(err.message || 'Something went wrong. Try again.');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Find Rhymes';
+      }
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.getElementById(`tab-${tab}`).classList.add('active');
+      renderTab();
+    }
+
+    function renderTab() {
+      const rhymes = currentTab === 'perfect' ? perfectRhymes : nearRhymes;
+      const label = currentTab === 'perfect' ? 'perfect' : 'near';
+      const grid = document.getElementById('results');
+      grid.innerHTML = '';
+
+      if (rhymes.length === 0) {
+        setStatus('');
+        grid.innerHTML = `<p class="empty">No ${label} rhymes found.</p>`;
+        return;
+      }
+
+      setStatus(`${rhymes.length} ${label} rhyme${rhymes.length !== 1 ? 's' : ''} found`);
+      rhymes.forEach(r => {
+        const chip = document.createElement('div');
+        chip.className = 'rhyme-chip';
+        chip.textContent = r.word;
+        chip.title = 'Click to copy';
+        chip.onclick = () => copyWord(r.word, chip);
+        grid.appendChild(chip);
+      });
+    }
+
+    function copyWord(word, chip) {
+      navigator.clipboard.writeText(word).then(() => {
+        const orig = chip.textContent;
+        chip.textContent = 'copied!';
+        setTimeout(() => chip.textContent = orig, 1000);
+      });
+    }
+
+    function setStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+
+    function clearResults() {
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('hint').textContent = '';
+      perfectRhymes = [];
+      nearRhymes = [];
+    }
+  </script>
+</body>
+</html>
