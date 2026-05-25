@@ -188,20 +188,16 @@
       clearResults();
 
       try {
-        const res = await fetch('/api/rhymes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ word }),
-        });
+        const [perfectRes, nearRes] = await Promise.all([
+          fetch(`https://api.datamuse.com/words?rel_rhy=${encodeURIComponent(word)}&max=30`),
+          fetch(`https://api.datamuse.com/words?rel_nry=${encodeURIComponent(word)}&max=30`)
+        ]);
 
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err.error || `Server error ${res.status}`);
-        }
+        const perfectData = await perfectRes.json();
+        const nearData = await nearRes.json();
 
-        const data = await res.json();
-        perfectRhymes = (data.perfect || []).map(w => ({ word: w }));
-        nearRhymes = (data.near || []).map(w => ({ word: w }));
+        perfectRhymes = perfectData.map(w => ({ word: w.word }));
+        nearRhymes = nearData.map(w => ({ word: w.word }));
 
         renderTab();
         document.getElementById('hint').textContent = 'Click any word to copy it';
